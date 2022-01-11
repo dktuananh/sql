@@ -1,0 +1,189 @@
+﻿-- 1. Bao nhiêu posts được tạo mỗi năm?
+SELECT COUNT(*) as number_of_posts, YEAR(CreationDate) as creation_year
+FROM dbo.posts
+GROUP BY YEAR(CreationDate)
+ORDER BY creation_year
+
+-- 2. Bao nhiêu votes được tạo mỗi ngày trong tuần
+SELECT COUNT(*) as number_of_votes, DATENAME(DW, CreationDate) as day_of_week
+FROM dbo.Votes
+GROUP BY DATENAME(DW, CreationDate)
+ORDER BY 
+	CASE DATENAME(DW, CreationDate)          
+          WHEN 'Monday' THEN 1
+          WHEN 'Tuesday' THEN 2
+          WHEN 'Wednesday' THEN 3
+          WHEN 'Thursday' THEN 4
+          WHEN 'Friday' THEN 5
+          WHEN 'Saturday' THEN 6
+		  WHEN 'Sunday' THEN 7
+     END
+
+-- 3. Danh sách tất cả commenst được tạo vào ngày "2012-12-19"
+-- Cách 1
+SELECT *
+FROM dbo.Comments
+WHERE CAST(CreationDate AS DATE) = '2012-12-19'
+
+--Cách 2
+SELECT * 
+FROM comments 
+WHERE DATEDIFF(DAY, CreationDate, '2012-12-19') = 0
+
+-- 4. Lấy ra danh sách tất cả users dưới 33 tuổi, sống ở London
+SELECT *
+FROM dbo.Users u
+WHERE Age < 33
+	AND Location LIKE '%London%'
+
+-- 5. Hiển thị số votes của mỗi post 
+
+SELECT p.Title, COUNT(*) number_of_votes
+FROM posts p
+	JOIN Votes v
+	ON p.Id = v.PostId
+GROUP BY p.Title
+ORDER BY COUNT(*) DESC
+
+-- 6. Hiển thị comments được viết bởi user có cùng location với user tạo post
+SELECT p.Id AS 'post_id', p.Title, p.OwnerUserId AS 'post_created_by_user', u_p.Location AS 'post_user_location',
+	c.Id AS 'cmt_id', u_c.Location AS 'cmt_user_location'
+FROM  posts p
+	JOIN Users u_p ON p.OwnerUserId = u_p.Id
+	JOIN Comments c ON c.PostId= p.id
+	JOIN Users u_c ON u_c.Id = c.UserId
+WHERE u_c.Location = u_p.Location
+
+-- 7. Bao nhiêu users chưa từng vote
+-- Cách 1:
+WITH "vote_cte" AS
+	(
+	SELECT u.Id	FROM Users u
+	EXCEPT
+	SELECT v.UserId	FROM Votes v
+	)
+SELECT COUNT(*) FROM vote_cte
+
+-- Cách 2:
+WITH "vote_cte" AS (
+	SELECT u.Id
+	FROM Users u
+	WHERE NOT EXISTS(
+		SELECT v.UserId
+		FROM Votes v
+		WHERE u.id = v.UserId
+		)
+)
+SELECT COUNT(*) FROM vote_cte
+
+-- 8 Hiển thị tất cả posts có số comments cao nhất
+WITH "top_cmt_of_post" AS
+	(
+	SELECT p.id, p.Title, COUNT(*) AS no_cmt,
+			DENSE_RANK() OVER (ORDER BY COUNT(*) DESC) AS 'cmt_count_ranking'
+	FROM posts p
+		JOIN Comments c ON p.id = c.PostId
+	GROUP BY p.id, p.Title
+	)
+SELECT *
+FROM top_cmt_of_post
+WHERE cmt_count_ranking = 1
+
+-- 9.  Với mỗi post, có bao nhiêu người dùng votes sống ở Canada
+-- Phần trăm so với tổng số votes ở post đó
+
+WITH no_vote_cte AS (	
+	SELECT p.id, p.Title, COUNT(*) AS number_of_vote,
+		SUM(
+			CASE
+				WHEN u.location LIKE '%canada%' THEN 1 ELSE 0
+			END
+		) AS 'votes_from_canada'
+	FROM posts p
+		JOIN Votes v ON p.id = v.PostId
+		JOIN Users u ON v.UserId = u.Id
+	GROUP BY p.id, p.Title
+	)
+SELECT *,
+	FORMAT(CAST(votes_from_canada*100 AS FLOAT)/CAST(number_of_vote AS FLOAT),'N2') AS votes_percentage
+FROM no_vote_cte
+
+
+-- 10. Số giờ bình quân khi có người comment đầu tiên vào post mới
+
+-- Cách 1:
+WITH time_to_cmt_cte AS(
+	SELECT p.Title, MIN(DATEDIFF(HOUR, p.CreationDate, c.CreationDate)) AS time_to_cmt
+	FROM posts p
+		JOIN Comments c ON p.Id = c.PostId
+	GROUP BY p.Title
+	)
+
+SELECT AVG(time_to_cmt) AS 'avg_num_of_hours'
+FROM time_to_cmt_cte
+
+
+-- Cách 2
+WITH "COMMENTS-TIMING-CTE"
+AS 
+    (
+    SELECT  p.Id AS 'post_id',
+            p.Title AS 'post_title',
+            p.CreationDate AS 'post_creation_date',
+            c.CreationDate AS 'comment_creation_date',
+            DENSE_RANK() OVER (PARTITION BY p.ID ORDER BY c.CreationDate) AS 'comment_rank'
+    FROM posts p JOIN comments c
+    ON   p.Id = c.postID
+    )
+SELECT AVG(DATEDIFF(HOUR, post_creation_date, comment_creation_date)) AS 'avg_num_of_hours'
+FROM "COMMENTS-TIMING-CTE"
+WHERE comment_rank = 1
+
+-- 11. Tag nào phổ biến ở mỗi post
+-- Mỗi post có thể có 1 hoặc nhiều tag
+--Cach 1
+WITH "cte_tags" (Tags) AS (
+	SELECT CAST(Tags AS VARCHAR(MAX)) 
+	FROM posts
+	UNION ALL
+	SELECT STUFF(Tags, 1, CHARINDEX('><' , Tags), '') 
+	-- CHARINDEX lấy vị trí '><'
+	-- STUFF thay thế từ vị trí 1 đến vị trí '><' bằng ''
+	FROM cte_tags
+	WHERE Tags  LIKE '%><%'
+	), "cte_tags_counter" AS (
+	SELECT CASE WHEN Tags LIKE '%><%' THEN LEFT(Tags, CHARINDEX('><', Tags))
+				ELSE Tags
+			END AS 'Tags'
+	FROM cte_tags
+	)
+SELECT COUNT(*), Tags
+FROM cte_tags_counter
+GROUP BY Tags
+ORDER BY COUNT(*) DESC
+
+-- Cach 2
+WITH "cte_tags" (Tags) AS(
+	SELECT REPLACE(REPLACE(REPLACE(Tags, '><', ','), '<',''),'>','')
+	FROM posts
+	)
+SELECT VALUE, COUNT(*) AS "no_tags"
+FROM cte_tags
+CROSS APPLY STRING_SPLIT(Tags, ',')
+GROUP BY VALUE
+ORDER BY COUNT(*) DESC
+
+
+--12. Tạo bảng pivot hiển thị số post được tạo mỗi năm (trục Y) và mỗi tháng (trục X)
+SELECT *
+FROM (
+	SELECT YEAR(CreationDate) AS 'Year', DATENAME(MONTH, CreationDate) AS 'Month', id 
+	FROM posts
+)  AS s
+PIVOT (
+	COUNT(id)
+	FOR [Month] IN ([January], [February], [March], [April], [May], [June], [July], [August], [September], [October], [November], [December])
+) AS pvt
+ORDER BY Year
+
+-- Tham khảo: https://ramkedem.com/en/sql-exercises-for-data-analysts/
