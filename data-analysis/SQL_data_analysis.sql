@@ -1,10 +1,13 @@
-﻿-- 1. Bao nhiêu posts được tạo mỗi năm?
+﻿SELECT *
+FROM [dbo].[Comments]
+
+-- 1. How many post were made in each year?
 SELECT COUNT(*) as number_of_posts, YEAR(CreationDate) as creation_year
 FROM dbo.posts
 GROUP BY YEAR(CreationDate)
 ORDER BY creation_year
 
--- 2. Bao nhiêu votes được tạo mỗi ngày trong tuần
+-- 2. How many votes were made in each day of the week?
 SELECT COUNT(*) as number_of_votes, DATENAME(DW, CreationDate) as day_of_week
 FROM dbo.Votes
 GROUP BY DATENAME(DW, CreationDate)
@@ -19,24 +22,23 @@ ORDER BY
 		  WHEN 'Sunday' THEN 7
      END
 
--- 3. Danh sách tất cả commenst được tạo vào ngày "2012-12-19"
--- Cách 1
+-- 3. List all comments created on "2012-12-19"
 SELECT *
 FROM dbo.Comments
 WHERE CAST(CreationDate AS DATE) = '2012-12-19'
 
---Cách 2
+--Or
 SELECT * 
 FROM comments 
 WHERE DATEDIFF(DAY, CreationDate, '2012-12-19') = 0
 
--- 4. Lấy ra danh sách tất cả users dưới 33 tuổi, sống ở London
+-- 4. List all users under the age of 33, living in London 
 SELECT *
 FROM dbo.Users u
 WHERE Age < 33
 	AND Location LIKE '%London%'
 
--- 5. Hiển thị số votes của mỗi post 
+-- 5. Display the number of votes for each post title 
 
 SELECT p.Title, COUNT(*) number_of_votes
 FROM posts p
@@ -45,7 +47,7 @@ FROM posts p
 GROUP BY p.Title
 ORDER BY COUNT(*) DESC
 
--- 6. Hiển thị comments được viết bởi user có cùng location với user tạo post
+-- 6. Display comments created by users living in the same location as the post creator
 SELECT p.Id AS 'post_id', p.Title, p.OwnerUserId AS 'post_created_by_user', u_p.Location AS 'post_user_location',
 	c.Id AS 'cmt_id', u_c.Location AS 'cmt_user_location'
 FROM  posts p
@@ -54,8 +56,8 @@ FROM  posts p
 	JOIN Users u_c ON u_c.Id = c.UserId
 WHERE u_c.Location = u_p.Location
 
--- 7. Bao nhiêu users chưa từng vote
--- Cách 1:
+-- 7. How many users have never voted ? 
+-- C 1:
 WITH "vote_cte" AS
 	(
 	SELECT u.Id	FROM Users u
@@ -64,7 +66,7 @@ WITH "vote_cte" AS
 	)
 SELECT COUNT(*) FROM vote_cte
 
--- Cách 2:
+-- C 2:
 WITH "vote_cte" AS (
 	SELECT u.Id
 	FROM Users u
@@ -76,7 +78,7 @@ WITH "vote_cte" AS (
 )
 SELECT COUNT(*) FROM vote_cte
 
--- 8 Hiển thị tất cả posts có số comments cao nhất
+-- 8 Display all posts having the highest amount of comments 
 WITH "top_cmt_of_post" AS
 	(
 	SELECT p.id, p.Title, COUNT(*) AS no_cmt,
@@ -89,8 +91,8 @@ SELECT *
 FROM top_cmt_of_post
 WHERE cmt_count_ranking = 1
 
--- 9.  Với mỗi post, có bao nhiêu người dùng votes sống ở Canada
--- Phần trăm so với tổng số votes ở post đó
+-- 9. For each post, how many votes are coming from users living in Canada ?
+--    What's their percentage of the total number of votes 
 
 WITH no_vote_cte AS (	
 	SELECT p.id, p.Title, COUNT(*) AS number_of_vote,
@@ -109,9 +111,9 @@ SELECT *,
 FROM no_vote_cte
 
 
--- 10. Số giờ bình quân khi có người comment đầu tiên vào post mới
+-- 10. How many hours in average, it takes to the first comment to be posted after a creation of a new post
 
--- Cách 1:
+-- C 1:
 WITH time_to_cmt_cte AS(
 	SELECT p.Title, MIN(DATEDIFF(HOUR, p.CreationDate, c.CreationDate)) AS time_to_cmt
 	FROM posts p
@@ -123,7 +125,7 @@ SELECT AVG(time_to_cmt) AS 'avg_num_of_hours'
 FROM time_to_cmt_cte
 
 
--- Cách 2
+-- C 2
 WITH "COMMENTS-TIMING-CTE"
 AS 
     (
@@ -139,9 +141,10 @@ SELECT AVG(DATEDIFF(HOUR, post_creation_date, comment_creation_date)) AS 'avg_nu
 FROM "COMMENTS-TIMING-CTE"
 WHERE comment_rank = 1
 
--- 11. Tag nào phổ biến ở mỗi post
--- Mỗi post có thể có 1 hoặc nhiều tag
---Cach 1
+-- 11. Whats the most common post tag ? 
+--     Note, each post may have 1 or more tags. 
+--     The goal of this question is to find the most common *single* tag
+--C 1
 WITH "cte_tags" (Tags) AS (
 	SELECT CAST(Tags AS VARCHAR(MAX)) 
 	FROM posts
@@ -162,7 +165,7 @@ FROM cte_tags_counter
 GROUP BY Tags
 ORDER BY COUNT(*) DESC
 
--- Cach 2
+-- C 2
 WITH "cte_tags" (Tags) AS(
 	SELECT REPLACE(REPLACE(REPLACE(Tags, '><', ','), '<',''),'>','')
 	FROM posts
@@ -174,7 +177,7 @@ GROUP BY VALUE
 ORDER BY COUNT(*) DESC
 
 
---12. Tạo bảng pivot hiển thị số post được tạo mỗi năm (trục Y) và mỗi tháng (trục X)
+--12. Create a pivot table displaying how many posts were created for each year (Y axis) and each month (X axis)
 SELECT *
 FROM (
 	SELECT YEAR(CreationDate) AS 'Year', DATENAME(MONTH, CreationDate) AS 'Month', id 
@@ -186,4 +189,4 @@ PIVOT (
 ) AS pvt
 ORDER BY Year
 
--- Tham khảo: https://ramkedem.com/en/sql-exercises-for-data-analysts/
+-- Reference: https://ramkedem.com/
